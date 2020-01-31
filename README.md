@@ -1,5 +1,8 @@
 # grass-endophyte-community-anaysis
 
+This is my playground for Graham's grass-endophpyte project. His readme says the following:
+
+""""
 This is a repository in which we (myself and colaborators) have access to data pipelines and data.
 
 'alt_biom.ipynb' is a notebook in which I worked from our raw reads into a biom table
@@ -8,3 +11,4 @@ This is a repository in which we (myself and colaborators) have access to data p
 'grass_97_wmeta.biom' is a biom object which was the end result of the 'alt_biom.ipynb' notebook
 
 'grass_biom_20191208.R' is an R script which picks up from the alt biom pipeline and contains all statistical anayses for the manuscript except for the funguild richness analyses.  
+"""""""
