@@ -1,0 +1,214 @@
+## Let's have a look at graham's files. 
+
+## don't know if we will need the FASTQ files... do I have these somewhere?
+
+## not sure, maybe archived them somewhere... check later. 
+
+## for now, can we get graham's biom table up and running?
+
+cd /home/daniel/Documents/submissions/grass-endophyte-community 
+
+R
+
+## update bioconductor, phyloseq
+## install.packages('BiocManager')
+## BiocManager::install(version = '3.10') ## necessary?
+#install.packages("BiocManager")
+#BiocManager::install('phyloseq')
+
+install.packages('spatstat')
+
+library(phyloseq)
+library(spatstat)
+grass97m <- import_biom('grass_97_wmeta.biom')
+
+dim(grass97m@otu_table)
+head(grass97m@tax_table) ## wonder how rigorous the ids are on this.
+
+head(grass97m@sam_data, n=2) ## wonder how rigorous the ids are on this.
+## looks good for the moment
+
+## so, big goals here are:
+
+## 1) check trend surfaces of community matrix varation  - can we describe the variation in graham's community matrices
+## with a north/sound trend in diversity and dissimilarity. The methods for this would 
+## be in the spatial analysis with R book, = RDA of community matrices against a polynomial trend surfaces
+## I think I recommended this in place of the original dbmem analysis, if it turns out to be informative. 
+
+## 2) Attempt to quantify the apparent increase in n/s diversity. Means 
+## repeating Grahams diversity metrics on the pre-variance-stabilization (pre-deseq), then 
+## check to see if there is enough statistical power to build a point pattern model from 
+## these.   
+
+## 3) figure out the story of the french flat site, the only place where the two grass host species
+## share a lot of endophyte species. What are the shared species? Are they unique to the site? are they 
+## interesting, as in maybe one of the species that have been shown to give panicum grass salt and drought 
+## tolerance?
+
+## let's start messing around with spatstat.
+
+## can we get x,y data for all sites? should be in our metadata somewhere?
+
+head(sample_data(grass97m@sam_data))
+
+md <- sample_data(grass97m@sam_data)
+
+colnames(md)
+
+md$y_coordinate
+
+md$latitude
+
+tail(md) ## last 7 samples are non-ecological, mock communities etc.
+
+## so 162 - 7 = 155 samples. Each of these samples = 1 plant?  
+
+## graham has 13 populations (6 danthonia and 7 festuca). Each should have 12 samples,
+## so 13 x 12 = 156 samples. 
+
+## So looks like one row on the otu table is one plant, probably. 
+
+## but what would make sense as a point on a point pattern analysis?
+
+## I think a "population" makes the most sense here. So an average of 
+## biodiversity metrics at each sampling site. 
+
+## what is graham's biodiversity metric? Looks like species richness,
+## or number of observations of a species. 
+
+## I would agree with this, because of the abundances issue with illumina reads. 
+
+## so we need graham's rarified species richness data, averaged for each site 
+## (and split up by host when necessary)  as our "z" variable. 
+
+## to get ready for this, can we make a point object for our geographical sample sites?
+
+md <- sample_data(grass97m@sam_data)
+
+head(md, n=1)
+colnames(md)
+
+md$region
+
+md$site
+
+md$site_nr
+
+length(unique(md$site_nr)) ## 10
+
+table(md$site)
+
+length(unique(md$site)) ## 10
+
+## can we turn these into point pattern objects?
+
+levels(md$region)
+unique(md$region)
+
+## assuming we generate a matrix of sites by an average diversity metric. 
+## for a moment, let's generate a set of random numbers
+
+fakeDiv <- sample(1:4000, nrow(md))
+## add to data 
+md$fakeDiv <- fakediv
+
+head(md, n=1)
+
+## okay, so now we want averages of this fake diversity by site?
+avgFakeDiv <- tapply(md$fakeDiv, md$site, mean)
+## our xy for these are long/lat:
+latitude <- tapply(as.numeric(md$latitude), md$site, mean)
+levels(as.factor(md$latitude))
+## that made some weird numbers?
+
+latitude <- tapply(as.numeric(md$latitude), md$site, identity)
+## ah - Hazel_Dell has two latitudes, 44.03 and 44.02
+
+md$site
+
+md[md$site=="Hazel_Dell",]
+
+md[md$site=="Hazel_Dell",]$latitude
+
+md[md$site=="Hazel_Dell",]$host
+
+tapply(md[md$site=="Hazel_Dell",]$latitude, md[md$site=="Hazel_Dell",]$host, identity)
+
+## D. californica is at 44.02, F. roemeri at 44.03
+
+## so what do want to do here? we want a table where each site is given an xy and a diversity value.
+## so we need to split up the hazel_dell site by host. Let's just do this for all sites, while we're
+## at it, because we're going to need to do this anyway...
+
+## this will be a collation of host and site columns:
+
+aa <- md[md$site!="Control",c('host','site','longitude','latitude','fakeDiv')]
+aa$longitude <- as.numeric(aa$longitude)
+aa$latitude <- as.numeric(aa$latitude)
+
+## plyr might work best here...
+library(plyr)
+
+## remind me how this works...
+dd<-data.frame(matrix(rnorm(216),72,3),c(rep("A",24),rep("B",24),rep("C",24)),c(rep("J",36),rep("K",36)))
+colnames(dd) <- c("v1", "v2", "v3", "dim1", "dim2")
+ddply(dd, c("dim1","dim2"), function(df)mean(df$v1))
+ddply(dd, c("dim1","dim2"), function(df)c(mean(df$v1),mean(df$v2),mean(df$v3),sd(df$v1),sd(df$v2),sd(df$v3)))
+
+## so for our data....
+
+bb <- ddply(aa, c("site","host"), function(df)c(mean(df$longitude), mean(df$latitude), mean(df$fakeDiv)))
+colnames(bb) <- c("site","host", "longitude", "latitude", "fakeDiv")
+
+head(bb)
+
+## can we convert to UTMS?
+
+## in BASH 
+sudo apt install libgdal-dev
+
+## back in R
+install.packages('rgdal')
+## use sp package:
+install.packages('sp')
+
+## start over. Here is the pipeline so far:
+
+## we're in UTM zone 10
+
+library(phyloseq)
+library(spatstat)
+library(sp)
+library(plyr)
+
+grass97m <- import_biom('grass_97_wmeta.biom')
+md <- sample_data(grass97m@sam_data)
+fakeDiv <- sample(1:4000, nrow(md))
+md$fakeDiv <- fakeDiv
+aa <- md[md$site!="Control",c('host','site','longitude','latitude','fakeDiv')]
+aa$longitude <- as.numeric(aa$longitude)
+aa$latitude <- as.numeric(aa$latitude)
+bb <- ddply(aa, c("site","host"), function(df)c(mean(df$longitude), mean(df$latitude), mean(df$fakeDiv)))
+colnames(bb) <- c("site","host", "longitude", "latitude", "fakeDiv")
+cbind(bb$longitude, bb$latitude)
+latlong = SpatialPoints(cbind(bb$longitude, bb$latitude), proj4string=CRS("+proj=longlat"))
+UTMs <- spTransform(latlong, CRS("+init=epsg:26910")) ## epsg code for zone 10
+UTMs <- data.frame(UTMs) 
+bb$x <- UTMs[,1]
+bb$y <- UTMs[,2]
+
+## can we make a spatstat object out of this?
+## our marks are fakeDiv
+
+win <- 
+
+cc <- ppp(x=bb$x,y=bb$y, 
+        xrange=c(min(bb$x),max(bb$x)), 
+        yrange=c(min(bb$y),max(bb$y)), 
+        marks=bb$fakeDiv
+        )
+
+plot(cc, use.marks=FALSE)
+
+## looks okay. And if we want to build a model?
+
