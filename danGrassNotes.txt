@@ -190,17 +190,16 @@ aa$longitude <- as.numeric(aa$longitude)
 aa$latitude <- as.numeric(aa$latitude)
 bb <- ddply(aa, c("site","host"), function(df)c(mean(df$longitude), mean(df$latitude), mean(df$fakeDiv)))
 colnames(bb) <- c("site","host", "longitude", "latitude", "fakeDiv")
-cbind(bb$longitude, bb$latitude)
 latlong = SpatialPoints(cbind(bb$longitude, bb$latitude), proj4string=CRS("+proj=longlat"))
 UTMs <- spTransform(latlong, CRS("+init=epsg:26910")) ## epsg code for zone 10
 UTMs <- data.frame(UTMs) 
 bb$x <- UTMs[,1]
 bb$y <- UTMs[,2]
+## sort by 
 
 ## can we make a spatstat object out of this?
 ## our marks are fakeDiv
 
-win <- 
 
 cc <- ppp(x=bb$x,y=bb$y, 
         xrange=c(min(bb$x),max(bb$x)), 
@@ -210,5 +209,175 @@ cc <- ppp(x=bb$x,y=bb$y,
 
 plot(cc, use.marks=FALSE)
 
-## looks okay. And if we want to build a model?
+plot(Smooth.ppp(cc))
+
+## looks okay. And if we want to build a model? This is confusing...
+
+## basically we want to test if there is significant north/south 
+## trend in these points, in a way that accounts for possible 
+## spatial autocorrelation.
+
+## but autocorrelation is only really meaningful if you have 
+## some kind of predictor besides distance, and you want to 
+## somehow quantify the effect of distance on the system, as a
+## source of error. 
+
+## so is it appropriate here to just run a regression with distance?
+
+## then if we are interested in other environmental effects, we 
+## can figure out autocorrelation at that point, as a source of error. 
+
+## which means that this just sort of boils down to a trend surface
+## analysis. 
+
+## looking at the tutorials for perspective:
+x <- seq(-10, 10, length= 30)
+y <- x
+f <- function(x, y) { r <- sqrt(x^2+y^2); 10 * sin(r)/r }
+z <- outer(x, y, f)
+z[is.na(z)] <- 1
+op <- par(bg = "white")
+
+persp(x, y, z, theta = 30, phi = 30, expand = 0.5, col = "lightblue")
+
+persp(x, y, z, theta = 30, phi = 30, expand = 0.5, col = "lightblue",
+      ltheta = 120, shade = 0.75, ticktype = "detailed",
+      xlab = "X", ylab = "Y", zlab = "Sinc( r )"
+) -> res
+round(res, 3)
+
+x <- 1:10
+y <- 1:10
+z <- outer(x, y, function(xi, yj) xi^2+yj^2)
+persp(x, y, z)
+
+##### apply to our data:
+
+dd <- bb
+
+ee <- dd[order(dd[,"x"],dd[,"y"]),]
+
+order(dd[,"x"])
+
+
+persp(bb$x, bb$y, bb$fakeDiv)
+
+## ugh, we need an x*y matrix...
+
+
+## getting ahead of ourselves. We need to build a model before 
+## we can display anything.
+
+## this website might be useful
+http://www.wekaleamstudios.co.uk/posts/displaying-data-using-level-plots/
+## uses loess function to fit a model to a single term x*y model. 
+
+x <- bb$x
+y <- bb$y
+z <- bb$fakeDiv
+
+bb.loess <- loess(z ~ x*y, degree = 2)
+
+## make our grid. 
+
+
+range(x)[2] - range(x)[1] ## total range of x is 80,324 m
+range(y)[2] - range(y)[1] ## total range of y is 678,639 m
+
+gridA <- expand.grid(list(
+    x = seq(range(x)[1],range(x)[2], 5000),
+    y = seq(range(y)[1],range(y)[2], 5000)
+    ))
+z = predict(bb.loess, newdata = gridA)
+
+## perspective tool
+persp(
+x = seq(range(x)[1],range(x)[2], 5000),
+y = seq(range(y)[1],range(y)[2], 5000),
+z,
+theta = 0, 
+phi = 50, 
+xlab = "X", ylab = "Y", zlab = "OTU richness",
+scale=FALSE
+)
+
+## contour tool
+library('lattice')
+bb.loess$Height = as.numeric(z)
+levelplot(Height ~ x*y, data = bb.loess,
+  col.regions = terrain.colors(100)
+)
+## not working...oh well
+
+## try image?
+image(x = seq(range(x)[1],range(x)[2], 5000),
+y = seq(range(y)[1],range(y)[2], 5000),
+z,
+xlab = "X Coordinate (feet)", ylab = "Y Coordinate (feet)",
+main = "biodiversity", 
+#asp=1,
+xlim=c(447906,528231)
+)
+
+box()
+
+## redo this with graham's data:
+
+
+## we need to merge our sample data frame with Graham's df. 
+
+library(phyloseq)
+library(spatstat)
+library(sp)
+library(plyr)
+
+grass97m <- import_biom('grass_97_wmeta.biom')
+md <- sample_data(grass97m@sam_data)
+aa <- md[md$site!="Control",c('host','site','longitude','latitude','fakeDiv')]
+aa$longitude <- as.numeric(aa$longitude)
+aa$latitude <- as.numeric(aa$latitude)
+bb <- ddply(aa, c("site","host"), function(df)c(mean(df$longitude), mean(df$latitude), mean(df$fakeDiv)))
+colnames(bb) <- c("site","host", "longitude", "latitude", "fakeDiv")
+latlong = SpatialPoints(cbind(bb$longitude, bb$latitude), proj4string=CRS("+proj=longlat"))
+UTMs <- spTransform(latlong, CRS("+init=epsg:26910")) ## epsg code for zone 10
+UTMs <- data.frame(UTMs) 
+bb$x <- UTMs[,1]
+bb$y <- UTMs[,2]
+bb$longitude <- bb$latitude <- NULL
+
+
+## we need to average graham's numbers
+
+grRich <- read.csv('rare_richness.csv')
+bb <- ddply(aa, c("site","host"), function(df)c(mean(df$longitude), mean(df$latitude), mean(df$fakeDiv)))
+
+grCon <- ddply(grRich, c('site', 'host_species'), function(df)c(mean(df$observations)))
+
+## we need to match some terms for merging
+bb$host[bb$host=="D. californica"] <- "Danthonia"
+bb$host[bb$host=="F. roemeri"] <- "Festuca"
+bb[bb=="French_flat"] <- "French Flat"
+bb[bb=="Hazel_Dell"] <- "Hazel Dell"
+bb[bb=="Horse_Rock"] <- "Horse Rock"
+bb[bb=="Lower_Table"] <- "Lower Table"
+bb[bb=="Roxy_Ann"] <- "Roxy Ann"
+bb[bb=="Upper_Table"] <- "Upper Table"
+bb[bb=="Upper_Weir"] <- "Upper Weir"
+colnames(grCon)[2] <- 'host'
+colnames(grCon)[3] <- 'observations'
+
+head(bb)
+head(grCon)
+
+spRich <- merge(bb, grCon, by = c('site','host'))
+
+## so a plan starts to form...
+
+## basically, we are doing a multiple regression of our z variable
+## against all the polynomial terms that are combinations of x and y.
+## I think we would make our best guess as to the order of the 
+## model, then do some sort of model selection 
+
+#save(spRich, file='spRich.rda')
+
 
