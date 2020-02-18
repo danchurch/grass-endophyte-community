@@ -330,6 +330,7 @@ library(phyloseq)
 library(spatstat)
 library(sp)
 library(plyr)
+library(vegan)
 
 grass97m <- import_biom('grass_97_wmeta.biom')
 md <- sample_data(grass97m@sam_data)
@@ -347,7 +348,6 @@ bb$longitude <- bb$latitude <- NULL
 
 
 ## we need to average graham's numbers
-
 grRich <- read.csv('rare_richness.csv')
 bb <- ddply(aa, c("site","host"), function(df)c(mean(df$longitude), mean(df$latitude), mean(df$fakeDiv)))
 
@@ -380,4 +380,397 @@ spRich <- merge(bb, grCon, by = c('site','host'))
 
 #save(spRich, file='spRich.rda')
 
+## run this through the quick, non-selective pipeline from above:
 
+x <- spRich$x
+y <- spRich$y
+z <- spRich$observations
+
+spRich.loess <- loess(z ~ x*y, degree = 2)
+
+z = predict(bb.loess, newdata = gridA)
+
+## in the case of graham, I think we just want to check for a 
+## N/S trend. 
+gridA <- expand.grid(list(
+    x = seq(range(x)[1],range(x)[2], 5000),
+    y = seq(range(y)[1],range(y)[2], 5000)
+    ))
+
+persp(
+x = seq(range(x)[1],range(x)[2], 5000),
+y = seq(range(y)[1],range(y)[2], 5000),
+z,
+theta = 0, 
+phi = 50, 
+xlab = "X", ylab = "Y", zlab = "OTU richness",
+scale=FALSE
+)
+
+image(x = seq(range(x)[1],range(x)[2], 5000),
+y = seq(range(y)[1],range(y)[2], 5000),
+z,
+main = "biodiversity", 
+asp=1,
+xlim=c(447906,528231)
+)
+
+box()
+
+spRich.loess <- loess(z ~ x*y, degree = 2)
+
+gridA <- expand.grid(list(
+    x = seq(range(x)[1],range(x)[2], 5000),
+    y = seq(range(y)[1],range(y)[2], 5000)
+    ))
+
+z = predict(spRich.loess, newdata = gridA)
+
+gridA$height = as.numeric(z)
+
+## try lattice again:
+levelplot(height ~ x*y, data = gridA,
+  xlab = "X Coordinate (feet)", ylab = "Y Coordinate (feet)",
+  main = "Surface elevation data",
+  col.regions = terrain.colors(100)
+)
+
+## something is really weird - the model is predicting negative values and 
+## thousands of observations
+
+## how can we evaluate models?
+
+## backward stepwise selection 
+
+## what's the full model?
+
+x <- spRich$x
+y <- spRich$y
+
+z <- spRich$observations
+
+gridA <- expand.grid(list(
+    x = seq(range(x)[1],range(x)[2], 5000),
+    y = seq(range(y)[1],range(y)[2], 5000)
+    ))
+
+X <- spRich$x
+Y <- spRich$y
+
+XY7 <- X + Y + X^2  + X*Y + Y^2 + X^3 + X^2*Y + X*Y^2 + Y^3
+
+aa <- data.frame(cbind(X,Y,X^2,X*Y,Y^2,X^3,X^2*Y,X*Y^2,Y^3))
+
+colnames(aa) <- c("X","Y","X2","XY","Y2","X3","X2Y","XY2","Y3")
+
+bb <- lm(z ~ ., data=aa)
+
+selectedMod <- step(bb)
+
+summary(selectedMod) 
+
+lmMod <- lm(ozone_reading ~ . , data = inputData)
+selectedMod <- step(lmMod)
+summary(selectedMod) 
+
+(mite.trend.fwd <- 
+  forward.sel(mite.h, mite.poly.ortho, adjR2thresh = R2adj.poly2))
+
+
+####################### 
+
+## start over, let's focus on just checking for a 
+## north south trend in graham's data:
+
+load(file='spRich.rda')
+
+head(spRich)
+
+## using both hosts
+
+divLM <- lm(spRich$observations ~ spRich$y)
+
+summary(divLM)
+
+#####################################################
+## Call:
+## lm(formula = spRich$observations ~ spRich$y)
+## 
+## Residuals:
+##     Min      1Q  Median      3Q     Max
+## -18.865  -8.023  -1.110  10.847  24.052
+## 
+## Coefficients:
+##               Estimate Std. Error t value Pr(>|t|)
+## (Intercept) -2.931e+01  7.511e+01  -0.390   0.7038
+## spRich$y     3.167e-05  1.535e-05   2.064   0.0634 .
+## ---
+## Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+## 
+## Residual standard error: 13.31 on 11 degrees of freedom
+## Multiple R-squared:  0.2791,    Adjusted R-squared:  0.2136
+## F-statistic: 4.259 on 1 and 11 DF,  p-value: 0.06345
+#####################################################
+
+## Huh, approaches 0.05. R2 adjusted = 0.2136
+
+## Danthonia sites
+head(spRich)
+danthOnly <- spRich[spRich$host == "Danthonia",]
+danthDivLM <- lm(danthOnly$observations ~ danthOnly$y)
+
+summary(danthDivLM)
+#######################################################
+## Call:
+## lm(formula = danthOnly$observations ~ danthOnly$y)
+## 
+## Residuals:
+##      1      2      3      4      5      6
+## -8.376  5.976 17.554 -9.186  1.761 -7.729
+## 
+## Coefficients:
+##               Estimate Std. Error t value Pr(>|t|)
+## (Intercept) -1.269e+02  1.014e+02  -1.252   0.2788
+## danthOnly$y  5.038e-05  2.082e-05   2.419   0.0728 .
+## ---
+## Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+## 
+## Residual standard error: 11.84 on 4 degrees of freedom
+## Multiple R-squared:  0.594,     Adjusted R-squared:  0.4926
+## F-statistic: 5.853 on 1 and 4 DF,  p-value: 0.07281
+#######################################################
+
+
+## Festuca sites
+festOnly <- spRich[spRich$host == "Festuca",]
+festDivLM <- lm(festOnly$observations ~ festOnly$y)
+summary(festDivLM)
+#####################################################
+## Festuca sites
+## Call:
+## lm(formula = festOnly$observations ~ festOnly$y)
+## 
+## Residuals:
+##        1        2        3        4        5        6        7
+##   0.4679   7.0384  -9.9316 -10.9713  14.4403  -9.2563   8.2127
+## 
+## Coefficients:
+##              Estimate Std. Error t value Pr(>|t|)
+## (Intercept) 6.857e+01  8.502e+01   0.806    0.457
+## festOnly$y  1.290e-05  1.730e-05   0.746    0.489
+## 
+## Residual standard error: 11.23 on 5 degrees of freedom
+## Multiple R-squared:  0.1001,    Adjusted R-squared:  -0.07985
+## F-statistic: 0.5564 on 1 and 5 DF,  p-value: 0.4893
+## 
+#####################################################
+
+
+## interesting. For all of the above text, that think that is 
+## about what we get here. 
+
+####################################################
+
+## job #2 - help figure out the story of French Flat
+
+## we need to figure out the unique OTUs present at French flat,
+## and find their sequences. 
+
+## blast these
+
+## see if they tend to be shared among hosts
+
+## see if these are famous endophytes, i.e. known to help with 
+## environmental stressors
+
+## so we need to see if Graham has the OTU sequence data? maybe we have this already...
+## have to look around.
+
+## can we subset to OTUs present at the french flat ?
+
+head(sample_data(grass97m))
+
+head(otu_table(grass97m))
+
+dim(sample_data(grass97m))
+dim(otu_table(grass97m))
+
+all(rownames(sample_data(grass97m)) == colnames(otu_table(grass97m)))
+
+## so good news, the rows of the sampledata are in the same order as the
+## columns of the otu_table
+
+## subset to french flat how?
+
+## get a name of sites that french flats:
+
+sampG <- sample_data(grass97m)
+otuG <- otu_table(grass97m)
+
+head(t(otuG))
+head(sampG)
+rownames(sampG) == rownames(t(otuG))
+
+FFsamp <- sampG[sampG$site == "French_flat",]
+FFotu <- otuG[,sampG$site == "French_flat"]
+
+dim(FFsamp)
+dim(FFotu)
+head(FFotu)
+
+## well that works. But we want to know OTUs are unique to Fflat. How do we find this?
+
+## we need the set of otus present in FF, and remove anything that is also present in the 
+## other sites 
+
+## non-zero otus at FF:
+
+FFotuNZ <- FFotu[rowSums(FFotu) > 0,]
+ffotus <- rownames(FFotuNZ)
+
+## which of these ffotus are present elsewhere?
+
+notFFotu <- otuG[,sampG$site != "French_flat"]
+notFFotuNZ <- notFFotu[rowSums(notFFotu) > 0,]
+
+notffotus <- rownames(notFFotuNZ)
+
+ffotus %in% notffotus
+!(ffotus %in% notffotus)
+
+onlyFFotus <- ffotus[!(ffotus %in% notffotus)]
+
+## do one sanity check:
+rowSums(otuG["OTU3460:97grass",])
+which(otuG["OTU3460:97grass",] > 0, arr.ind = TRUE)
+otuG[1,93]
+sampG["97grass","site"]
+
+## what do our nms graphics look like with and without 
+## FFlat, and without these OTUs?
+
+## rerun the overall NMS, all sites:
+
+## overall community matrix to P/A
+
+## we want to make a matrix that is organized by host
+
+otuG <- otu_table(grass97m)
+## transpose, get rid of controls:
+otuGPA <- t(otuG)[sampG$site != "Control",]
+## get rid of species that were only in the controls:
+any(colSums(otuGPA) < 1) ## yup
+sum(colSums(otuGPA) < 1) ## 48 OTUs. Seems like a lot, but oh well...
+otuGPA <- otuGPA[,colSums(otuGPA) > 0]
+## check again
+any(colSums(otuGPA) < 1) 
+sum(colSums(otuGPA) < 1) ## better
+## convert to p/a:
+otuGPA[otuGPA > 0] <- 1
+allNMS <- metaMDS(otuGPA)
+## color by host, first:
+## dataframe from nms points for plotting:
+pltAllSitesNMS <-  data.frame(allNMS$points)
+## are we still in order?
+all(rownames(pltAllSitesNMS) == rownames(sampG))
+## nope. If we delete the none controls from sampG?
+sampGnoC <- sampG[sampG$site != "Control",]
+all(rownames(pltAllSitesNMS) == rownames(sampGnoC))
+## better
+
+## add color by host column:
+pltAllSitesNMS$color <- vector(length=nrow(pltAllSitesNMS), mode="character")
+pltAllSitesNMS[sampGnoC$host == "D. californica",]$color <- "green"
+pltAllSitesNMS[sampGnoC$host == "F. roemeri",]$color <- "red"
+
+plot(pltAllSitesNMS$MDS1, pltAllSitesNMS$MDS2, col=pltAllSitesNMS$color)
+## remind me, how to add centroids or hulls?
+ordihull(allNMS, groups=pltAllSitesNMS$color)
+## not pretty, but it will work for the moment.
+## call we circle the french flat sites?
+justFF <- pltAllSitesNMS[sampGnoC$site == 'French_flat',]
+points(justFF$MDS1, justFF$MDS2, col="blue", cex=3)
+## interesting. the ff sites are all clearly important...
+
+## so let's redo the above without them, and see what the NMS
+## looks like:
+
+otuGPA
+sampGnoC 
+all(rownames(otuGPA) == rownames(sampGnoC))
+
+## get rid of FF sites
+noFFotu <- otuGPA[sampGnoC$site!='French_flat',]
+noFFsamp <- sampGnoC[sampGnoC$site!='French_flat',]
+
+## get rid of species that were only in FF:
+
+any(colSums(noFFotu) < 1) ## yup
+sum(colSums(noFFotu) < 1) 
+## 202 otus? I thought I found 199...hmmm... index bleed in the controls? 
+## good thing we checked... use these instead of the above for our list of sequences
+## when we start looking for interesting species
+## anyway, remove these
+noFFotu <- noFFotu[,colSums(noFFotu) > 0]
+all(rownames(noFFsamp) ==  rownames(noFFotu))
+##rerun nms
+noFFNMS <- metaMDS(noFFotu)
+
+pltNoFFNMS <-  data.frame(noFFNMS$points)
+## are we still in order?
+all(rownames(pltNoFFNMS) == rownames(noFFsamp))
+## add color by host column:
+pltNoFFNMS$color <- vector(length=nrow(pltNoFFNMS), mode="character")
+pltNoFFNMS[noFFsamp$host == "D. californica",]$color <- "green"
+pltNoFFNMS[noFFsamp$host == "F. roemeri",]$color <- "red"
+
+## now let's plot both the nmses side-by-side:
+
+par(mfrow=c(1,2))
+
+plot(pltAllSitesNMS$MDS1, pltAllSitesNMS$MDS2, col=pltAllSitesNMS$color)
+## remind me, how to add centroids or hulls?
+ordihull(allNMS, groups=pltAllSitesNMS$color)
+## not pretty, but it will work for the moment.
+## call we circle the french flat sites?
+justFF <- pltAllSitesNMS[sampGnoC$site == 'French_flat',]
+points(justFF$MDS1, justFF$MDS2, col="blue", cex=3)
+## interesting. the ff sites are all clearly important...
+
+plot(pltNoFFNMS$MDS1, pltNoFFNMS$MDS2, col=pltNoFFNMS$color)
+ordihull(noFFNMS, groups=pltNoFFNMS$color)
+dim(pltNoFFNMS)
+dim(pltAllSitesNMS)
+
+
+## okay, not superclean, but there is a difference. Can we quantify it 
+## with a permanova?
+
+## with FF
+hostPermaFF <- adonis(otuGPA ~ sampGnoC$host, permutations=10000)
+## without FF
+hostPermaNoFF <- adonis(noFFotu ~ noFFsamp$host, permutations=10000)
+
+## with FF, our R2 is .0507, without FF R2 = .05835. So there is a 
+## difference (both are highly statistically significant). 
+hostPermaFF
+hostPermaNoFF 
+
+## next step is a nice figure, NMS that shows the sites that are french flat 
+## out by themselves. 
+
+
+###############################################
+
+
+## so... 199 otus unique to FF. get them into a list:
+sink(file="FFuniqueOTUs.txt")
+onlyFFotus
+sink()
+
+## next step is to get the sequence data for these. 
+## can we output these nicely?
+
+## did some reformat with vim, and rename
+mv FFuniqueOTUs.txt FFuniqueOTUsreformatted.txt
+ 
