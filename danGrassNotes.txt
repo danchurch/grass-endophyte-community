@@ -692,11 +692,49 @@ justFF <- pltAllSitesNMS[sampGnoC$site == 'French_flat',]
 points(justFF$MDS1, justFF$MDS2, col="blue", cex=3)
 ## interesting. the ff sites are all clearly important...
 
+
+par(mfrow=c(1,1))
+
+
+################################################
+## plot of all sites, with FF circled in blue
+plot(pltAllSitesNMS$MDS1, 
+pltAllSitesNMS$MDS2, 
+col=pltAllSitesNMS$color,
+xlim=c(-1,1),
+xlab='MDS1',
+ylab='MDS2',
+)
+## ellipses for hosts
+ordiellipse(allNMS, 
+    groups=pltAllSitesNMS$color, 
+    conf=.90, 
+    kind='sd', 
+    col=c("green","red")
+    )
+## points for FF, and ellipse
+justFF <- pltAllSitesNMS[sampGnoC$site == 'French_flat',]
+points(justFF$MDS1, justFF$MDS2, col="blue", cex=3)
+
+## if we want to put an ellipse around FF:
+ordiellipse(allNMS, 
+    groups=sampGnoC$site, 
+    show.groups='French_flat',
+    conf=.90, 
+    kind='sd', 
+    col=c("blue"),
+    )
+
+
+################################################
+
+
 ## so let's redo the above without them, and see what the NMS
 ## looks like:
 
 otuGPA
 sampGnoC 
+
 all(rownames(otuGPA) == rownames(sampGnoC))
 
 ## get rid of FF sites
@@ -706,13 +744,22 @@ noFFsamp <- sampGnoC[sampGnoC$site!='French_flat',]
 ## get rid of species that were only in FF:
 
 any(colSums(noFFotu) < 1) ## yup
+
 sum(colSums(noFFotu) < 1) 
 ## 202 otus? I thought I found 199...hmmm... index bleed in the controls? 
 ## good thing we checked... use these instead of the above for our list of sequences
 ## when we start looking for interesting species
 ## anyway, remove these
+
+## save the OTU list first for later, may be interesting
+onlyFFotu2 <- colnames(noFFotu[,(colSums(noFFotu) < 1)])
+
+## now get rid of them
 noFFotu <- noFFotu[,colSums(noFFotu) > 0]
+
+## check that sample data matches
 all(rownames(noFFsamp) ==  rownames(noFFotu))
+
 ##rerun nms
 noFFNMS <- metaMDS(noFFotu)
 
@@ -752,25 +799,148 @@ hostPermaFF <- adonis(otuGPA ~ sampGnoC$host, permutations=10000)
 hostPermaNoFF <- adonis(noFFotu ~ noFFsamp$host, permutations=10000)
 
 ## with FF, our R2 is .0507, without FF R2 = .05835. So there is a 
-## difference (both are highly statistically significant). 
+## difference (both are highly statistically significant), but not
+## huge. Of variance explained, it's not insignificant, though:
+## .008/.058 = ~13% of variance explained by the presence of this site. 
+## so report it thusly. 
 hostPermaFF
 hostPermaNoFF 
 
-## next step is a nice figure, NMS that shows the sites that are french flat 
-## out by themselves. 
 
 
 ###############################################
 
+library(phyloseq)
+library(spatstat)
+library(sp)
+library(plyr)
+library(vegan)
 
-## so... 199 otus unique to FF. get them into a list:
+## now, how do we start figuring out our interesting
+## species?
+
+## there was confusion above about a few species
+## being unique to FFlat. One method took the unique
+## set of OTUs from french flat before removing
+## controls (199 OTUs), one took them after removing
+## controls (202 OTUs). 
+
+## the first we called "onlyFFotus"
+
+all(onlyFFotus %in% onlyFFotu2) 
+## yup, all of our original FF only otus are in there
+
+all(onlyFFotu2 %in% onlyFFotus) ## nope
+
+## what are the new ones, that were also found in our controls?
+onlyFFotu2[!(onlyFFotu2 %in% onlyFFotus)] 
+## "OTU1510:9grass"  "OTU2945:6grass"  "OTU1830:14grass"
+
+## what are these?
+
+otu_table(grass97m)["OTU1510:9grass",]
+
+otu_table(grass97m)[c("OTU1510:9grass", "OTU2945:6grass", "OTU1830:14grass"),]
+## yup, these have non-control sites (5grass,6grass,9,14) and control sites (255, 256, 257)
+## control sites are wood neg,pos_g,pos_its controls
+
+## just for convenience
+aa <- subset_samples(grass97m, site == "Control") 
+
+bb <- subset_samples(grass97m, site == "French_flat") 
+sample_data(aa) sample_data(bb) ## what are these three according to our tax assignments?  
+tax_table(grass97m)[c("OTU1510:9grass", "OTU2945:6grass", "OTU1830:14grass"),]
+## Strobilurus, Phaeoacremonium, Ramalina
+
+## what are those doing in the controls?
+## Strobilurus is found in the posG controls, Phaeoacremonium is in posITS, and 
+## Ramalina is in the negative. Somebody tell me we contaminated our negative
+## control with a lichen thallus. I don't believe it. 
+
+## gotta be index bleed. So let's keep these for our search.
+
 sink(file="FFuniqueOTUs.txt")
-onlyFFotus
+onlyFFotu2
 sink()
+
 
 ## next step is to get the sequence data for these. 
 ## can we output these nicely?
 
 ## did some reformat with vim, and rename
-mv FFuniqueOTUs.txt FFuniqueOTUsreformatted.txt
+FFuniqueOTUsreformatted.txt
  
+## a couple steps here - make a fasta with sequences for each
+## then blast them all
+## then cruise the literature for important papers
+
+## most elegant way to find the sequences from graham's OTU sequences?
+
+## if elegant is in the sentence, the solution is probably not 
+## in R....
+
+python3
+
+## been a while...how do we do python again?
+
+#sudo pip3 install biopython
+
+import re
+from Bio import SeqIO
+
+## for example, can we find "OTU3697:100grass" in the sequence annotation/header?
+
+otuName = "OTU3697:100grass" 
+for seqq in SeqIO.parse("otus_97_uclust_ass_tax.fasta", "fasta"):
+    if re.search (otuName, seqq.name):
+        print(seqq.name)
+
+## yeah works
+
+## how do we get our OTU names out of the text file list?
+
+with open("FFuniqueOTUsreformatted.txt") as otuNames:
+    for otuName in otuNames:
+        print(otuName)
+
+## so brute force, two loops
+
+with open("FFuniqueOTUsreformatted.txt") as otuNames:
+    for otuName in otuNames:
+        print(otuName)
+        otuNameClean = otuName.strip()
+        for seqq in SeqIO.parse("otus_97_uclust_ass_tax.fasta", "fasta"):
+            if re.search (otuNameClean, seqq.name):
+                print('found: {0}'.format(seqq.name))
+
+
+
+## now we want the whole record, appending to a file 
+
+with open("FFuniqueOTUs.fasta", "a") as f:
+    with open("FFuniqueOTUsreformatted.txt") as otuNames:
+        for otuName in otuNames:
+            otuNameClean = otuName.strip()
+            for seqq in SeqIO.parse("otus_97_uclust_ass_tax.fasta", "fasta"):
+                if re.search (otuNameClean, seqq.name):
+                    f.write((seqq.format("fasta")))
+
+
+
+## looks like it worked... sanity check
+
+grep "OTU3697:100grass" otus_97_uclust_ass_tax.fasta -A 1
+
+## matches in both files..
+
+## we need to download UNITE, and blast it with these sequences. 
+
+## downloading version 8.2, here:
+
+unite="/home/daniel/Documents/analyses/UNITE/sh_general_release_04.02.2020/sh_general_release_dynamic_04.02.2020.fasta"
+
+## make a blasteable database:
+
+makeblastdb -in $unite -parse_seqids -dbtype "nucl"
+
+
